@@ -90,35 +90,18 @@ def readCsv(csv_path: pathlib.Path) -> pandas.DataFrame:
 
 # Function to get the file names
 def getFiles(file_path: pathlib.Path) -> pandas.DataFrame:
-    # Creating an empty numpy array
-    temp_array = numpy.empty((0, 3))
+    # Creating an empty list
+    temp_list = []
     # Iterate through every item in the path
     for item in file_path.iterdir():
         # Add the file to a numpy array
         if item.is_file():
-            # temp_array = numpy.concatenate(
-            #     (temp_array, [[item, item.stem, True]]), axis=0
-            # )
-            temp_array = numpy.append(temp_array, [[item, item.stem, True]], axis=0)
+            temp_list.append([item, item.stem, True])
         else:
-            # temp_array = numpy.concatenate(
-            #     (temp_array, [[item, item.stem, False]]), axis=0
-            # )
-            temp_array = numpy.concatenate(
-                (temp_array, [[item, item.stem, False]]), axis=0
-            )
-    print(temp_array)
-    print(temp_array.shape[0])
-    print(temp_array.shape[1])
-    print(temp_array[0:])
-    temp_array = temp_array.reshape(11, 3)
-    # # Create a data frame
-    # temp_df = pandas.DataFrame(
-    #     data=temp_array[0:],
-    #     # columns=[f"Yummy_{i}" for i in range(0, temp_array.shape[0])],
-    #     # index=[i for i in range(0, temp_array.shape[1])],
-    # )
-    # print(temp_df)
+            temp_list.append([item, item.stem, False])
+    # Create a data frame
+    temp_df = pandas.DataFrame(data=temp_list, columns=["Path", "Name", "Type"])
+    return temp_df
 
 
 # Creating a logger
