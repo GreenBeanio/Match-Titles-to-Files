@@ -17,6 +17,9 @@ import logging
 import sys
 import argparse
 import numpy
+import thefuzz.fuzz
+import thefuzz.process
+from typing import List
 
 
 # Class to hold the path settings
@@ -96,12 +99,22 @@ def getFiles(file_path: pathlib.Path) -> pandas.DataFrame:
     for item in file_path.iterdir():
         # Add the file to a numpy array
         if item.is_file():
-            temp_list.append([item, item.stem, True])
+            temp_list.append([item, item.name, item.stem, True])
         else:
-            temp_list.append([item, item.stem, False])
+            temp_list.append([item, item.stem, item.stem, False])
     # Create a data frame
-    temp_df = pandas.DataFrame(data=temp_list, columns=["Path", "Name", "Type"])
+    temp_df = pandas.DataFrame(
+        data=temp_list, columns=["Path", "Name", "Title", "Type"]
+    )
     return temp_df
+
+
+# Function to find the best match
+def find_match(title: str, search_titles: List[str]) -> List:  # change type
+    result = thefuzz.process.extract(
+        title, search_titles, scorer=thefuzz.fuzz.ratio, limit=3
+    )
+    print(result)
 
 
 # Creating a logger
@@ -154,7 +167,15 @@ found_df = input_df[input_df["Path"].notnull()]  # .copy()
 # Reading all the files in the file directory
 file_titles = getFiles(user_args.file_directory)
 
+# Removing files that are already in the found df (they've already been found :^])
+file_titles = file_titles.drop(
+    file_titles[file_titles["Name"].isin(list(found_df["Path"]))].index
+)
 
+# Checking each file in the search df to find the best match in the file titles df
+for index, row in search_df.iterrows():
+    find_match(row["Title"], list(file_titles["Name"]))
+    input()
 # Footer Comment
 # History of Contributions:
 # [2024-2024] - [Garrett Johnson (GreenBeanio) - https://github.com/greenbeanio] - [The entire document]
