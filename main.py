@@ -19,7 +19,7 @@ import argparse
 import numpy
 import thefuzz.fuzz
 import thefuzz.process
-from typing import List
+from typing import List, Tuple, Union
 
 
 # Class to hold the path settings
@@ -40,19 +40,57 @@ class FileFuzzResult:
         self.title = title
         self.ftype = ftype
         self.ind = ind
-        self.first_results = []
-        self.second_results = []
-        self.third_results = []
+        self.results = []
+
+    # Print information
+    def __str__(self) -> str:
+        return (
+            f"Title: {self.title}\n"
+            f"Results: {self.results}\n"
+            f"Path: {self.path}\n"
+            f"Name: {self.name}\n"
+            f"Type: {self.ftype}\n"
+            f"Index: {self.ind}"
+        )
+
+    # Function to update the class values
+    def updateResults(
+        self,
+        result: List[Union[str, int]],
+    ) -> None:
+        self.results.append(result)
 
 
 # Class to hold the results of title fuzz
 class TitleFuzzResult:
+    # Initialization
     def __init__(self, title: str, ind: int) -> None:
         self.title = title
         self.ind = ind
         self.first_result = []
         self.second_result = []
         self.third_result = []
+
+    # Print information
+    def __str__(self) -> str:
+        return (
+            f"Title: {self.title}\n"
+            f"First: {self.first_result}\n"
+            f"Second: {self.second_result}\n"
+            f"Third: {self.third_result}\n"
+            f"Index: {self.ind}"
+        )
+
+    # Function to update the class values
+    def updateResults(
+        self,
+        result1: List[Union[str, int]],
+        result2: List[Union[str, int]],
+        result3: List[Union[str, int]],
+    ) -> None:
+        self.first_result = result1
+        self.second_result = result2
+        self.third_result = result3
 
 
 # Function to check if a path exists
@@ -116,6 +154,35 @@ def readCsv(csv_path: pathlib.Path) -> pandas.DataFrame:
         sys.exit()
 
 
+# Function to create the desired data frames
+def createDesiredDataframes(
+    input_file: pathlib.Path, file_path: pathlib.Path
+) -> Tuple[pandas.DataFrame, pandas.DataFrame, pandas.DataFrame, pandas.DataFrame]:
+    # Getting the input csv data in a data frame
+    input_df = readCsv(input_file)
+
+    # Add column names
+    input_df.columns = ["Title", "Path"]
+
+    # Creating an index column (for recombining at the end)
+    input_df["Index"] = input_df.index
+
+    # Splitting the data frame into 2 data frames (Might need to make these as deep copies later, believe these still reference the same data)
+    search_df = input_df[input_df["Path"].isnull()]  # .copy()
+    found_df = input_df[input_df["Path"].notnull()]  # .copy()
+
+    # Reading all the files in the file directory
+    file_titles = getFiles(file_path)
+
+    # Removing files that are already in the found df (they've already been found :^])
+    file_titles = file_titles.drop(
+        file_titles[file_titles["Name"].isin(list(found_df["Path"]))].index
+    )
+
+    # Returning the data frames
+    return (input_df, search_df, found_df, file_titles)
+
+
 # Function to get the file names
 def getFiles(file_path: pathlib.Path) -> pandas.DataFrame:
     # Creating an empty list
@@ -135,29 +202,62 @@ def getFiles(file_path: pathlib.Path) -> pandas.DataFrame:
 
 
 # Function to find the best match
-def find_match(title: str, search_titles: List[str]) -> list:  # change type
+def findMatch(title: str, search_titles: List[str]) -> list:  # change type
     result = thefuzz.process.extract(
         title, search_titles, scorer=thefuzz.fuzz.ratio, limit=3
     )
     return result
 
 
+# Function to get string similarity
+def findSimilarity(
+    titles: pandas.DataFrame, search: pandas.DataFrame
+) -> Tuple[pandas.Series, pandas.Series]:
+    # Create a series of classes to store the file results
+    file_classes = createFileClasses(titles)
+    # Create a series of classes to store the title results
+    title_classes = createTitleClasses(search)
+
+    # Checking each file in the search df to find the best match in the file titles df
+    for index, row in search_df.iterrows():
+        # Getting the fuzz results comparing the searching title to the files
+        result = findMatch(row["Title"], list(file_titles["Title"]))
+
+        # Updating the results for the titles
+        title_class: TitleFuzzResult = title_classes[row["Title"]]
+        # This will update the class in the series because it's just a reference not a copy
+        title_class.updateResults(result[0], result[1], result[2])
+
+        # Updating the result for the files
+        result1_class: FileFuzzResult = file_classes[result[0][0]]
+        result1_class.updateResults([row["Title"], result[0][1]])
+        result2_class: FileFuzzResult = file_classes[result[1][0]]
+        result2_class.updateResults([row["Title"], result[1][1]])
+        result3_class: FileFuzzResult = file_classes[result[2][0]]
+        result3_class.updateResults([row["Title"], result[2][1]])
+
+    # Return the series
+    return (file_classes, title_classes)
+
+
 # Function to create a dictionary to store file fuzz results
-def createFileClasses(df: pandas.DataFrame) -> List[FileFuzzResult]:
+def createFileClasses(df: pandas.DataFrame) -> pandas.Series:
     temp_list = []
     for ind, row in df.iterrows():
         temp_list.append(
             FileFuzzResult(row["Path"], row["Name"], row["Title"], row["Type"], ind)
         )
-    return temp_list
+    temp_series = pandas.Series(data=temp_list, index=list(df["Title"]))
+    return temp_series
 
 
 # Function to create a dictionary to store title fuzz results
-def createTitleClasses(df: pandas.DataFrame) -> List[TitleFuzzResult]:
+def createTitleClasses(df: pandas.DataFrame) -> pandas.Series:
     temp_list = []
     for ind, row in df.iterrows():
         temp_list.append(TitleFuzzResult(row["Title"], ind))
-    return temp_list
+    temp_series = pandas.Series(data=temp_list, index=list(df["Title"]))
+    return temp_series
 
 
 # # Function to create a dictionary to store results for each file
@@ -202,45 +302,15 @@ cli_args = parser.parse_args()
 # Get the user arguments
 user_args = checkArguments()
 
-# Getting the input csv data in a data frame
-input_df = readCsv(user_args.input_csv)
-
-# Add column names
-input_df.columns = ["Title", "Path"]
-
-# Creating an index column (for recombining at the end)
-input_df["Index"] = input_df.index
-
-# Splitting the data frame into 2 data frames (Might need to make these as deep copies later, believe these still reference the same data)
-search_df = input_df[input_df["Path"].isnull()]  # .copy()
-found_df = input_df[input_df["Path"].notnull()]  # .copy()
-
-# Reading all the files in the file directory
-file_titles = getFiles(user_args.file_directory)
-
-# Removing files that are already in the found df (they've already been found :^])
-file_titles = file_titles.drop(
-    file_titles[file_titles["Name"].isin(list(found_df["Path"]))].index
+# Creating the desired data frames
+input_df, search_df, found_df, file_titles = createDesiredDataframes(
+    user_args.input_csv, user_args.file_directory
 )
 
-# # Create a dictionary to store the file results
-# file_results = createResultDict(list(file_titles["Name"]))
+# Creating series of the similarities
+file_classes, title_classes = findSimilarity(file_titles, search_df)
 
-# # Create a dictionary to store the title results
-# title_results = createResultDict(list(search_df["Title"]))
 
-# Create classes to store the title results
-file_classes = createFileClasses(file_titles)
-
-# Create classes to store the title results
-title_classes = createTitleClasses(search_df)
-
-# Checking each file in the search df to find the best match in the file titles df
-for index, row in search_df.iterrows():
-    result = find_match(row["Title"], list(file_titles["Name"]))
-
-    print(result)
-    input()
 # Footer Comment
 # History of Contributions:
 # [2024-2024] - [Garrett Johnson (GreenBeanio) - https://github.com/greenbeanio] - [The entire document]
