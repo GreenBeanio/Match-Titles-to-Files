@@ -221,6 +221,9 @@ def findMatch(title: str, search_titles: List[str]) -> list:  # change type
     result = thefuzz.process.extract(
         title, search_titles, scorer=thefuzz.fuzz.ratio, limit=3
     )
+    # Using the fuzz.ratio scorer because I shouldn't need it to tokenize or any of the
+    # more advanced stuff. The titles should be mostly similar in structure. Tokenizing might
+    # even make it worse because the titles often wont have any spaces.
     return result
 
 
@@ -317,8 +320,24 @@ input_df, search_df, found_df, file_titles = createDesiredDataframes(
 # Creating series of the similarities
 file_classes, title_classes = findSimilarity(file_titles, search_df)
 
-print(file_classes[1])
-print(title_classes[1])
+# Deciding which file to assign to a title
+
+
+# Iterating through all of the files
+for ind, value in enumerate(file_classes):
+    # Check each of the results to see if this file was the top match
+    for ind, x_result in enumerate(value.results):
+        # Checking if the highest matching result for the file was the top match for the title
+        if value.results[ind][0] == title_classes[value.title].first_result[0]:
+            print("YIPPIE")
+            # Remove this file and that title from the pool to select from... somehow
+            # ..................... #
+            # ..................... #
+            # ..................... #
+            # ..................... #
+            # ..................... #
+            # Break from the loop to go onto the next file
+            break
 
 # Footer Comment
 # History of Contributions:
