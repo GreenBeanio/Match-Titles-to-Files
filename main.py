@@ -30,6 +30,27 @@ class UserPaths:
         self.output_csv = output_csv
 
 
+# Class to hold the results of file fuzz
+class FileFuzzResult:
+    def __init__(self, path: pathlib.Path, name: str, title: str, ftype: bool) -> None:
+        self.path = path
+        self.name = name
+        self.title = title
+        self.ftype = ftype
+        self.first_results = []
+        self.second_results = []
+        self.third_results = []
+
+
+# Class to hold the results of title fuzz
+class TitleFuzzResult:
+    def __init__(self, title: str) -> None:
+        self.title = title
+        self.first_result = []
+        self.second_result = []
+        self.third_result = []
+
+
 # Function to check if a path exists
 def checkPath(test_path: pathlib.Path) -> bool:
     if pathlib.Path.exists(test_path):
@@ -110,11 +131,19 @@ def getFiles(file_path: pathlib.Path) -> pandas.DataFrame:
 
 
 # Function to find the best match
-def find_match(title: str, search_titles: List[str]) -> List:  # change type
+def find_match(title: str, search_titles: List[str]) -> list:  # change type
     result = thefuzz.process.extract(
         title, search_titles, scorer=thefuzz.fuzz.ratio, limit=3
     )
     print(result)
+
+
+# Function to create a dictionary to store results for each file
+def createResultDict(titles: str) -> dict:
+    temp_dict = {}
+    for title in titles:
+        temp_dict[title] = {1: [], 2: [], 3: []}
+    return temp_dict
 
 
 # Creating a logger
@@ -171,6 +200,14 @@ file_titles = getFiles(user_args.file_directory)
 file_titles = file_titles.drop(
     file_titles[file_titles["Name"].isin(list(found_df["Path"]))].index
 )
+
+print(search_df)
+
+# Create a dictionary to store the file results
+file_results = createResultDict(list(file_titles["Name"]))
+
+# Create a dictionary to store the title results
+title_results = createResultDict(list(search_df["Title"]))
 
 # Checking each file in the search df to find the best match in the file titles df
 for index, row in search_df.iterrows():
