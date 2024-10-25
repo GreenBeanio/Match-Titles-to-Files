@@ -58,7 +58,22 @@ class FileFuzzResult:
         self,
         result: List[Union[str, int]],
     ) -> None:
-        self.results.append(result)
+        # Check if it's less than 5 (desired length)
+        if len(self.results) < 5:
+            # Add result
+            self.results.append(result)
+            # Only sort for the first 5 results
+            self.results.sort(key=lambda x: x[1], reverse=True)
+        else:
+            # Check if the score is larger than any of the existing results
+            for ind, i_result in enumerate(self.results):
+                if result[1] > i_result[1]:
+                    # Insert the value
+                    self.results.insert(ind, result)
+                    # Remove the last value (since it'll be the smaller one)
+                    self.results.pop()  # could also do self.results = self.results[0:5]
+                    # Exit the loop
+                    break  # could return too
 
 
 # Class to hold the results of title fuzz
@@ -260,14 +275,6 @@ def createTitleClasses(df: pandas.DataFrame) -> pandas.Series:
     return temp_series
 
 
-# # Function to create a dictionary to store results for each file
-# def createResultDict(titles: str) -> dict:
-#     temp_dict = {}
-#     for title in titles:
-#         temp_dict[title] = {1: [], 2: [], 3: []}
-#     return temp_dict
-
-
 # Creating a logger
 # Create a logger
 logger = logging.getLogger("Title Matcher")
@@ -310,6 +317,8 @@ input_df, search_df, found_df, file_titles = createDesiredDataframes(
 # Creating series of the similarities
 file_classes, title_classes = findSimilarity(file_titles, search_df)
 
+print(file_classes[1])
+print(title_classes[1])
 
 # Footer Comment
 # History of Contributions:
