@@ -20,6 +20,7 @@ import numpy
 import thefuzz.fuzz
 import thefuzz.process
 from typing import List, Tuple, Union
+import hashlib
 
 
 # Class to hold the path settings
@@ -242,16 +243,16 @@ def findSimilarity(
         result = findMatch(row["Title"], list(file_titles["Title"]))
 
         # Updating the results for the titles
-        title_class: TitleFuzzResult = title_classes[row["Title"]]
+        title_class: TitleFuzzResult = title_classes[pathHash(row["Title"])]
         # This will update the class in the series because it's just a reference not a copy
         title_class.updateResults(result[0], result[1], result[2])
 
         # Updating the result for the files
-        result1_class: FileFuzzResult = file_classes[result[0][0]]
+        result1_class: FileFuzzResult = file_classes[pathHash(result[0][0])]
         result1_class.updateResults([row["Title"], result[0][1]])
-        result2_class: FileFuzzResult = file_classes[result[1][0]]
+        result2_class: FileFuzzResult = file_classes[pathHash(result[1][0])]
         result2_class.updateResults([row["Title"], result[1][1]])
-        result3_class: FileFuzzResult = file_classes[result[2][0]]
+        result3_class: FileFuzzResult = file_classes[pathHash(result[2][0])]
         result3_class.updateResults([row["Title"], result[2][1]])
 
     # Return the series
@@ -265,7 +266,9 @@ def createFileClasses(df: pandas.DataFrame) -> pandas.Series:
         temp_list.append(
             FileFuzzResult(row["Path"], row["Name"], row["Title"], row["Type"], ind)
         )
-    temp_series = pandas.Series(data=temp_list, index=list(df["Title"]))
+    # Create hash to store the titles because they can be key breaking
+    index_hash = [pathHash(x) for x in list(df["Title"])]
+    temp_series = pandas.Series(data=temp_list, index=index_hash)
     return temp_series
 
 
@@ -274,8 +277,15 @@ def createTitleClasses(df: pandas.DataFrame) -> pandas.Series:
     temp_list = []
     for ind, row in df.iterrows():
         temp_list.append(TitleFuzzResult(row["Title"], ind))
-    temp_series = pandas.Series(data=temp_list, index=list(df["Title"]))
+    # Create hash to store the titles because they can be key breaking
+    index_hash = [pathHash(x) for x in list(df["Title"])]
+    temp_series = pandas.Series(data=temp_list, index=index_hash)
     return temp_series
+
+
+# Function to create a hash for the path strings
+def pathHash(pre: str) -> str:
+    return hashlib.sha256(pre.encode("utf-8")).hexdigest()
 
 
 # Creating a logger
@@ -322,13 +332,23 @@ file_classes, title_classes = findSimilarity(file_titles, search_df)
 
 # Deciding which file to assign to a title
 
+print(file_classes)
+print("---------------------\n\n\n\n----------------------")
+print(title_classes)
+
 
 # Iterating through all of the files
 for ind, value in enumerate(file_classes):
     # Check each of the results to see if this file was the top match
     for ind, x_result in enumerate(value.results):
+
+        print(value.title)
+
         # Checking if the highest matching result for the file was the top match for the title
-        if value.results[ind][0] == title_classes[value.title].first_result[0]:
+        if (
+            value.results[ind][0]
+            == title_classes[pathHash(value.title)].first_result[0]
+        ):
             print("YIPPIE")
             # Remove this file and that title from the pool to select from... somehow
             # ..................... #
