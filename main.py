@@ -25,10 +25,19 @@ import hashlib
 
 # Class to hold the path settings
 class UserPaths:
-    def __init__(self, input_csv, file_directory, output_csv) -> None:
+    def __init__(
+        self,
+        input_csv: pathlib.Path,
+        file_directory: pathlib.Path,
+        output_csv: pathlib.Path,
+        score_limit: int,
+        score_engine: int,
+    ) -> None:
         self.input_csv = input_csv
         self.file_directory = file_directory
         self.output_csv = output_csv
+        self.score_limit = score_limit
+        self.score_engine = score_engine
 
 
 # Class to hold the results of file fuzz
@@ -86,6 +95,7 @@ class TitleFuzzResult:
         self.first_result = []
         self.second_result = []
         self.third_result = []
+        self.match_result = []
 
     # Print information
     def __str__(self) -> str:
@@ -94,7 +104,8 @@ class TitleFuzzResult:
             f"First: {self.first_result}\n"
             f"Second: {self.second_result}\n"
             f"Third: {self.third_result}\n"
-            f"Index: {self.ind}"
+            f"Index: {self.ind}\n"
+            f"Match: {self.match_result}"
         )
 
     # Function to update the class values
@@ -107,6 +118,17 @@ class TitleFuzzResult:
         self.first_result = result1
         self.second_result = result2
         self.third_result = result3
+
+    # Function to assign the match value
+    def updateMatch(self, result: List[Union[str, int]]) -> None:
+        self.match_result = result
+
+    # Function to check if there is already a match
+    def checkMatch(self) -> bool:
+        if len(self.match_result) == 0:
+            return False
+        else:
+            return True
 
 
 # Function to check if a path exists
@@ -155,7 +177,9 @@ def checkArguments() -> UserPaths:
         logger.critical("Fix the errors in your files")
         sys.exit()
     # Create the class to store the files
-    return UserPaths(input_csv, files_path, output_csv)
+    return UserPaths(
+        input_csv, files_path, output_csv, cli_args.score_limit, cli_args.score_engine
+    )
 
 
 # Function to read the csv
@@ -219,15 +243,40 @@ def getFiles(file_path: pathlib.Path) -> pandas.DataFrame:
 
 # Function to find the best match
 def findMatch(
-    title: str, search_titles: List[str], matching: numpy.ndarray
-) -> list:  # change type
-    result = thefuzz.process.extract(
-        title, search_titles, scorer=thefuzz.fuzz.ratio, limit=3
-    )
-    # Using the fuzz.ratio scorer because I shouldn't need it to tokenize or any of the
-    # more advanced stuff. The titles should be mostly similar in structure. Tokenizing might
-    # even make it worse because the titles often wont have any spaces.
-
+    title: str, search_titles: List[str], matching: numpy.ndarray, token_engine: int
+) -> list:
+    # Use the desired engine
+    if token_engine == 0:
+        result = thefuzz.process.extract(
+            title, search_titles, scorer=thefuzz.fuzz.ratio, limit=3
+        )
+        # Simple checking based on the entire strings
+    elif token_engine == 1:
+        result = thefuzz.process.extract(
+            title, search_titles, scorer=thefuzz.fuzz.partial_ratio, limit=3
+        )
+        # Simple checking, but it checks substrings instead of the entire string
+    elif token_engine == 2:
+        result = thefuzz.process.extract(
+            title, search_titles, scorer=thefuzz.fuzz.token_sort_ratio, limit=3
+        )
+        # Tokenizes (splits up) the strings before comparing them. Sorts them as well so the order of words doesn't matter.
+    elif token_engine == 3:
+        result = thefuzz.process.extract(
+            title, search_titles, scorer=thefuzz.fuzz.partial_token_sort_ratio, limit=3
+        )
+        # Same as token sort ratio, but does it with substrings
+    elif token_engine == 4:
+        result = thefuzz.process.extract(
+            title, search_titles, scorer=thefuzz.fuzz.token_set_ratio, limit=3
+        )
+        # Tokenizes (splits up) the strings before comparing them. Sorts them as well so the order of words doesn't matter. It also takes out common tokens/words.
+    elif token_engine == 5:
+        result = thefuzz.process.extract(
+            title, search_titles, scorer=thefuzz.fuzz.partial_token_set_ratio, limit=3
+        )
+        # Same as token set ratio, but does it with substrings
+    # For matching files you probably want it to be as similar as possible (i.e. the smaller integer options)
     # Modifying the results to use the original path instead of lower case
     new_result = [list(x) for x in result]
     for x in range(0, len(new_result)):
@@ -239,7 +288,7 @@ def findMatch(
 
 # Function to get string similarity
 def findSimilarity(
-    titles: pandas.DataFrame, search: pandas.DataFrame
+    titles: pandas.DataFrame, search: pandas.DataFrame, token_engine: int
 ) -> Tuple[pandas.Series, pandas.Series]:
     # Create a series of classes to store the file results
     file_classes = createFileClasses(titles)
@@ -254,7 +303,7 @@ def findSimilarity(
     # Checking each file in the search df to find the best match in the file titles df
     for index, row in search_df.iterrows():
         # Getting the fuzz results comparing the searching title to the files
-        result = findMatch(row["Title"].lower(), file_titles, file_np)
+        result = findMatch(row["Title"].lower(), file_titles, file_np, token_engine)
         # result = findMatch(row["Title"], list(titles["Title"]))
 
         # Updating the results for the titles
@@ -303,8 +352,96 @@ def pathHash(pre: str) -> str:
     return hashlib.sha256(pre.encode("utf-8")).hexdigest()
 
 
+# Function to get the title results for a certain type
+def getCheckValue(title_value: str, search: int) -> List[Union[str, int]]:
+    # Would like to use a case statement instead of if, but I need it to work on older python
+    if search == 0:
+        return title_value.first_result
+    elif search == 1:
+        return title_value.second_result
+    elif search == 2:
+        return title_value.third_result
+
+
+# Function to check for matching titles
+def checkValue(
+    file_value: str, title_value: str, search: int, score_criteria: int
+) -> bool:
+    # Get the result
+    result = getCheckValue(title_value, search)
+    # Check that file names match
+    if file_value == result[0]:
+        # Check that the file is above a certain score (could do this in the first conditional statement, but too bad never nesters)
+        if result[1] >= score_criteria:
+            return True
+        else:
+            return False
+    else:
+        return False
+
+
+# Function to check if the title and files are matching
+def checkMatching(
+    files: pandas.Series,
+    titles: pandas.Series,
+    search: int,
+    score_criteria: int,
+    token_engine: int,
+) -> pandas.Series:
+    results = {"yes": 0, "no": 0}
+    # Iterating through all of the files
+    for ind, value in enumerate(files):
+        found_file = False
+        # Check each of the results to see if this file was the top match
+        for ind, x_result in enumerate(value.results):
+            # Check the different location depending on the search argument
+            if checkValue(
+                value.title, titles[pathHash(x_result[0])], search, score_criteria
+            ):
+                # Make sure that the title hasn't already been assigned a file
+                if not titles[pathHash(x_result[0])].checkMatch():
+                    # Update the title item
+                    found_file = True
+                    results["yes"] = results["yes"] + 1
+                    # Remove the file from series (so that it wont be used in further results)
+                    files = files.drop(
+                        pathHash(value.title)
+                    )  # Probably not the most efficient, but it's this or an if statement on every class to check if it's been used or not
+                    # Add match information to to the title
+                    titles[pathHash(x_result[0])].updateMatch(
+                        [
+                            value.path,
+                            value.name,
+                            value.title,
+                            value.ftype,
+                            getCheckValue(titles[pathHash(x_result[0])], search),
+                            search,
+                            score_criteria,
+                            token_engine,
+                        ]
+                    )
+                    # Could also probably save the entire class object of the file into the title, but I don't want to do that
+                    # You also really only need the path and get the other name aspects from that, but I'm saving them
+                    # Break from the loop to go onto the next file (don't break if the file was already used!)
+                    break
+        if not found_file:
+            results["no"] = results["no"] + 1
+    # Return the unmatched files
+    print(results)
+    return files
+
+
+# Function to check all 3 levels of matching
+def checkAllMatching(
+    files: pandas.Series, titles: pandas.Series, score_criteria: int, token_engine: int
+) -> pandas.Series:
+    files = checkMatching(files, titles, 0, score_criteria, token_engine)
+    files = checkMatching(files, titles, 1, score_criteria, token_engine)
+    files = checkMatching(files, titles, 2, score_criteria, token_engine)
+    return files
+
+
 # Creating a logger
-# Create a logger
 logger = logging.getLogger("Title Matcher")
 logger.setLevel(logging.INFO)
 
@@ -315,13 +452,13 @@ parser = argparse.ArgumentParser(
     epilog="Garrett Johnson (GreenBeanio) - https://github.com/greenbeanio",
 )
 parser.add_argument(
-    "-csv",
+    "-i",
     "--csv_path",
     help="Path to the csv file. Default: ./titles.csv",
     type=pathlib.Path,
 )
 parser.add_argument(
-    "-files",
+    "-f",
     "--files_path",
     help="Path to the directory with the files to attempt to match the titles to. Default: ./files",
     type=pathlib.Path,
@@ -332,6 +469,26 @@ parser.add_argument(
     help="Path to where you want to new (or overwritten) csv to go. Default: ./matched.csv",
     type=pathlib.Path,
 )
+parser.add_argument(
+    "-s",
+    "--score_limit",
+    help="What the score must be for a title and file to match. Default: 0. Must be 0 to 100",
+    type=int,
+    choices=range(0, 101),
+    metavar="0-100",
+    default=90,  # No reason for this specific limit, just a starting point
+)
+parser.add_argument(
+    "-e",
+    "--score_engine",
+    help="What score engine to use. Default: 0. Must be 0 to 5.\n0: Ratio\n1: Partial Ratio\n2: Token Sort Ratio\n3: Partial Token Sort Ratio\n4: Token Set Ratio\n5: Partial Token Set Ratio",
+    type=int,
+    choices=range(0, 6),
+    metavar="0-5",
+    default=0,
+)
+
+# Get the command line arguments
 cli_args = parser.parse_args()
 
 # Get the user arguments
@@ -343,125 +500,23 @@ input_df, search_df, found_df, file_titles = createDesiredDataframes(
 )
 
 # Creating series of the similarities
-file_classes, title_classes = findSimilarity(file_titles, search_df)
-
-# Deciding which file to assign to a title
-
-############
+file_classes, title_classes = findSimilarity(
+    file_titles, search_df, user_args.score_engine
+)
 
 
-# Function to check for matching titles
-def checkValue(file_value: str, title_value: str, search: int) -> bool:
+# Check if the file and titles match (returns remaining files)
+file_classes = checkAllMatching(
+    file_classes, title_classes, user_args.score_limit, user_args.score_engine
+)
 
-    print(search)
-    print(file_value)
-    if search == 1:
-        print(title_value.first_result[0])
-    elif search == 2:
-        print(title_value.second_result[0])
-    elif search == 3:
-        print(title_value.third_result[0])
-    print("-------------------------")
-    # input()
-    if search == 1:
-        if file_value == title_value.first_result[0]:
-            return True
-    elif search == 2:
-        if file_value == title_value.second_result[0]:
-            return True
-    elif search == 3:
-        if file_value == title_value.third_result[0]:
-            return True
-    return False
+# Prints all matches
+for x in title_classes:
+    if len(x.match_result) != 0:
+        print(
+            f"Title: {x.title}, File: {x.match_result[1]}, Score: {x.match_result[4][1]}, Engine: {x.match_result[7]}, Limit: {x.match_result[6]}, Search: {x.match_result[5]}"
+        )
 
-
-# Function to check if the title and files are matching
-def checkMatching(
-    files: pandas.Series, titles: pandas.Series, search: int
-) -> pandas.Series:
-    results = {"yes": 0, "no": 0}
-    # Iterating through all of the files
-    for ind, value in enumerate(files):
-        found_file = False
-        # Check each of the results to see if this file was the top match
-        for ind, x_result in enumerate(value.results):
-            # Check the different location depending on the search argument
-            if checkValue(value.title, titles[pathHash(x_result[0])], search):
-                # if checkValue(value.results[ind][0], titles[pathHash(x_result[0])], search):
-                found_file = True
-                results["yes"] = results["yes"] + 1
-                # Remove this file and that title from the pool to select from... somehow
-                # ..................... #
-                # ..................... #
-                # ..................... #
-                # ..................... #
-                # ..................... #
-                files = files.drop(
-                    pathHash(value.title)
-                )  # Probably not the most efficient, but it's this or an if statement on every class to check if it's been used or not
-                # Break from the loop to go onto the next file
-                break
-        if not found_file:
-            results["no"] = results["no"] + 1
-    # Return the unmatched files
-    print(results)
-    return files
-
-
-# Function to check all 3 levels of matching
-def checkAllMatching(files: pandas.Series, titles: pandas.Series) -> pandas.Series:
-    files = checkMatching(files, titles, 1)
-    input()
-    files = checkMatching(files, titles, 2)
-    input()
-    files = checkMatching(files, titles, 3)
-    input()
-    return files
-
-
-# Check if the file and titles match
-file_classes = checkAllMatching(file_classes, title_classes)
-
-print(file_classes)
-
-
-###################
-
-# # Iterating through all of the files
-# for ind, value in enumerate(file_classes):
-#     found_file = False
-#     # Check each of the results to see if this file was the top match
-#     for ind, x_result in enumerate(value.results):
-#         # Checking if the highest matching result for the file was the top match for the title
-#         if (
-#             value.results[ind][0]
-#             == title_classes[pathHash(x_result[0])].first_result[0]
-#         ):
-#             found_file = True
-#             results["yes"] = results["yes"] + 1
-#             # Remove this file and that title from the pool to select from... somehow
-#             # ..................... #
-#             # ..................... #
-#             # ..................... #
-#             # ..................... #
-#             # ..................... #
-#             file_classes = file_classes.drop(
-#                 pathHash(value.title)
-#             )  # Probably not the most efficient, but it's this or an if statement on every class to check if it's been used or not
-#             # Break from the loop to go onto the next file
-#             break
-#     if not found_file:
-#         results["no"] = results["no"] + 1
-# print(results)
-
-# print(len(file_classes))
-
-# # Iterating over the titles that weren't a first
-# # ........................ #
-# # ........................ #
-# # ........................ #
-# # ........................ #
-# # ........................ #
 
 # Footer Comment
 # History of Contributions:
