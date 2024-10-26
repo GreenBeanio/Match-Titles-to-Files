@@ -218,14 +218,23 @@ def getFiles(file_path: pathlib.Path) -> pandas.DataFrame:
 
 
 # Function to find the best match
-def findMatch(title: str, search_titles: List[str]) -> list:  # change type
+def findMatch(
+    title: str, search_titles: List[str], matching: numpy.ndarray
+) -> list:  # change type
     result = thefuzz.process.extract(
         title, search_titles, scorer=thefuzz.fuzz.ratio, limit=3
     )
     # Using the fuzz.ratio scorer because I shouldn't need it to tokenize or any of the
     # more advanced stuff. The titles should be mostly similar in structure. Tokenizing might
     # even make it worse because the titles often wont have any spaces.
-    return result
+
+    # Modifying the results to use the original path instead of lower case
+    new_result = [list(x) for x in result]
+    for x in range(0, len(new_result)):
+        ibx = numpy.where(matching[1] == new_result[x][0])
+        new_result[x][0] = matching[0][ibx].item()
+
+    return new_result
 
 
 # Function to get string similarity
@@ -237,10 +246,16 @@ def findSimilarity(
     # Create a series of classes to store the title results
     title_classes = createTitleClasses(search)
 
+    # Create a list of files in lower case to compare to (I believe making it lower case will make them closer)
+    file_titles = [x.lower() for x in list(titles["Title"])]
+    # Create a numpy array with both
+    file_np = numpy.array([list(titles["Title"]), file_titles])
+
     # Checking each file in the search df to find the best match in the file titles df
     for index, row in search_df.iterrows():
         # Getting the fuzz results comparing the searching title to the files
-        result = findMatch(row["Title"], list(file_titles["Title"]))
+        result = findMatch(row["Title"].lower(), file_titles, file_np)
+        # result = findMatch(row["Title"], list(titles["Title"]))
 
         # Updating the results for the titles
         title_class: TitleFuzzResult = title_classes[pathHash(row["Title"])]
@@ -332,24 +347,122 @@ file_classes, title_classes = findSimilarity(file_titles, search_df)
 
 # Deciding which file to assign to a title
 
-# Iterating through all of the files
-for ind, value in enumerate(file_classes):
-    # Check each of the results to see if this file was the top match
-    for ind, x_result in enumerate(value.results):
-        # Checking if the highest matching result for the file was the top match for the title
-        if (
-            value.results[ind][0]
-            == title_classes[pathHash(x_result[0])].first_result[0]
-        ):
-            print("YIPPIE")
-            # Remove this file and that title from the pool to select from... somehow
-            # ..................... #
-            # ..................... #
-            # ..................... #
-            # ..................... #
-            # ..................... #
-            # Break from the loop to go onto the next file
-            break
+############
+
+
+# Function to check for matching titles
+def checkValue(file_value: str, title_value: str, search: int) -> bool:
+
+    print(search)
+    print(file_value)
+    if search == 1:
+        print(title_value.first_result[0])
+    elif search == 2:
+        print(title_value.second_result[0])
+    elif search == 3:
+        print(title_value.third_result[0])
+    print("-------------------------")
+    # input()
+    if search == 1:
+        if file_value == title_value.first_result[0]:
+            return True
+    elif search == 2:
+        if file_value == title_value.second_result[0]:
+            return True
+    elif search == 3:
+        if file_value == title_value.third_result[0]:
+            return True
+    return False
+
+
+# Function to check if the title and files are matching
+def checkMatching(
+    files: pandas.Series, titles: pandas.Series, search: int
+) -> pandas.Series:
+    results = {"yes": 0, "no": 0}
+    # Iterating through all of the files
+    for ind, value in enumerate(files):
+        found_file = False
+        # Check each of the results to see if this file was the top match
+        for ind, x_result in enumerate(value.results):
+            # Check the different location depending on the search argument
+            if checkValue(value.title, titles[pathHash(x_result[0])], search):
+                # if checkValue(value.results[ind][0], titles[pathHash(x_result[0])], search):
+                found_file = True
+                results["yes"] = results["yes"] + 1
+                # Remove this file and that title from the pool to select from... somehow
+                # ..................... #
+                # ..................... #
+                # ..................... #
+                # ..................... #
+                # ..................... #
+                files = files.drop(
+                    pathHash(value.title)
+                )  # Probably not the most efficient, but it's this or an if statement on every class to check if it's been used or not
+                # Break from the loop to go onto the next file
+                break
+        if not found_file:
+            results["no"] = results["no"] + 1
+    # Return the unmatched files
+    print(results)
+    return files
+
+
+# Function to check all 3 levels of matching
+def checkAllMatching(files: pandas.Series, titles: pandas.Series) -> pandas.Series:
+    files = checkMatching(files, titles, 1)
+    input()
+    files = checkMatching(files, titles, 2)
+    input()
+    files = checkMatching(files, titles, 3)
+    input()
+    return files
+
+
+# Check if the file and titles match
+file_classes = checkAllMatching(file_classes, title_classes)
+
+print(file_classes)
+
+
+###################
+
+# # Iterating through all of the files
+# for ind, value in enumerate(file_classes):
+#     found_file = False
+#     # Check each of the results to see if this file was the top match
+#     for ind, x_result in enumerate(value.results):
+#         # Checking if the highest matching result for the file was the top match for the title
+#         if (
+#             value.results[ind][0]
+#             == title_classes[pathHash(x_result[0])].first_result[0]
+#         ):
+#             found_file = True
+#             results["yes"] = results["yes"] + 1
+#             # Remove this file and that title from the pool to select from... somehow
+#             # ..................... #
+#             # ..................... #
+#             # ..................... #
+#             # ..................... #
+#             # ..................... #
+#             file_classes = file_classes.drop(
+#                 pathHash(value.title)
+#             )  # Probably not the most efficient, but it's this or an if statement on every class to check if it's been used or not
+#             # Break from the loop to go onto the next file
+#             break
+#     if not found_file:
+#         results["no"] = results["no"] + 1
+# print(results)
+
+# print(len(file_classes))
+
+# # Iterating over the titles that weren't a first
+# # ........................ #
+# # ........................ #
+# # ........................ #
+# # ........................ #
+# # ........................ #
+
 # Footer Comment
 # History of Contributions:
 # [2024-2024] - [Garrett Johnson (GreenBeanio) - https://github.com/greenbeanio] - [The entire document]
