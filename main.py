@@ -332,22 +332,14 @@ file_classes, title_classes = findSimilarity(file_titles, search_df)
 
 # Deciding which file to assign to a title
 
-print(file_classes)
-print("---------------------\n\n\n\n----------------------")
-print(title_classes)
-
-
 # Iterating through all of the files
 for ind, value in enumerate(file_classes):
     # Check each of the results to see if this file was the top match
     for ind, x_result in enumerate(value.results):
-
-        print(value.title)
-
         # Checking if the highest matching result for the file was the top match for the title
         if (
             value.results[ind][0]
-            == title_classes[pathHash(value.title)].first_result[0]
+            == title_classes[pathHash(x_result[0])].first_result[0]
         ):
             print("YIPPIE")
             # Remove this file and that title from the pool to select from... somehow
@@ -358,7 +350,6 @@ for ind, value in enumerate(file_classes):
             # ..................... #
             # Break from the loop to go onto the next file
             break
-
 # Footer Comment
 # History of Contributions:
 # [2024-2024] - [Garrett Johnson (GreenBeanio) - https://github.com/greenbeanio] - [The entire document]
