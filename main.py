@@ -317,32 +317,43 @@ def createClasses(titles: pandas.DataFrame, search: pandas.DataFrame):
 def findSimilarity(
     file_classes: pandas.Series,
     title_classes: pandas.Series,
-    titles: pandas.DataFrame,
     search_df: pandas.DataFrame,
     token_engine: int,
 ) -> None:
+    # Create a list of the plain titles
+    titles = [x.title for x in file_classes]
     # Create a list of files in lower case to compare to (I believe making it lower case will make them closer)
-    file_titles = [x.lower() for x in list(titles["Title"])]
+    file_titles = [x.lower() for x in titles]
     # Create a numpy array with both
-    file_np = numpy.array([list(titles["Title"]), file_titles])
+    file_np = numpy.array([titles, file_titles])
 
     # Checking each file in the search df to find the best match in the file titles df
     for index, row in search_df.iterrows():
         # Getting the fuzz results comparing the searching title to the files
         result = findMatch(row["Title"].lower(), file_titles, file_np, token_engine)
-
         # Updating the results for the titles
         title_class: TitleFuzzResult = title_classes[pathHash(row["Title"])]
-        # This will update the class in the series because it's just a reference not a copy
-        title_class.updateResults(result[0], result[1], result[2])
 
-        # Updating the result for the files
-        result1_class: FileFuzzResult = file_classes[pathHash(result[0][0])]
-        result1_class.updateResults([row["Title"], result[0][1]])
-        result2_class: FileFuzzResult = file_classes[pathHash(result[1][0])]
-        result2_class.updateResults([row["Title"], result[1][1]])
-        result3_class: FileFuzzResult = file_classes[pathHash(result[2][0])]
-        result3_class.updateResults([row["Title"], result[2][1]])
+        # Implementing handling for results for the title class if less than 3
+        if len(result) == 3:
+            # This will update the class in the series because it's just a reference not a copy
+            title_class.updateResults(result[0], result[1], result[2])
+        elif len(result) == 2:
+            title_class.updateResults(result[0], result[1], None)
+        else:
+            title_class.updateResults(result[0], None, None)
+
+        # Implementing handling for results for the files class if less than 3
+        if len(result) >= 1:
+            # Updating the result for the files
+            result1_class: FileFuzzResult = file_classes[pathHash(result[0][0])]
+            result1_class.updateResults([row["Title"], result[0][1]])
+        if len(result) >= 2:
+            result2_class: FileFuzzResult = file_classes[pathHash(result[1][0])]
+            result2_class.updateResults([row["Title"], result[1][1]])
+        if len(result) == 3:
+            result3_class: FileFuzzResult = file_classes[pathHash(result[2][0])]
+            result3_class.updateResults([row["Title"], result[2][1]])
 
 
 # Function to create a dictionary to store file fuzz results
@@ -570,7 +581,9 @@ for stage in range(0, 6):
     # Check if there are any more files AND titles to connect
     if len(file_classes) != 0 and len(title_classes) != 0:
         # Creating series of the similarities  (I could just get the file titles from the title_classes...)
-        findSimilarity(file_classes, title_classes, file_titles, search_df, stage)
+        # findSimilarity(file_classes, title_classes, file_titles, search_df, stage)
+        findSimilarity(file_classes, title_classes, search_df, stage)
+
         # Check if the file and titles match (returns remaining files)
         file_classes = checkAllMatching(
             file_classes, title_classes, user_args.score_limit, stage
@@ -586,32 +599,6 @@ print(len(file_classes))
 print(len(title_classes))
 print(title_classes[1])
 print(o_input_df.iloc[36])
-
-############### OLD
-
-# Creating the desired data frames
-search_df, file_titles = createDesiredDataframes(o_input_df, o_file_df)
-
-# Create the classes to store the data
-file_classes, title_classes = createClasses(file_titles, search_df)
-
-# Creating series of the similarities
-findSimilarity(
-    file_classes, title_classes, file_titles, search_df, user_args.score_engine
-)
-
-# Check if the file and titles match (returns remaining files)
-file_classes = checkAllMatching(
-    file_classes, title_classes, user_args.score_limit, user_args.score_engine
-)
-
-# Prints all matches
-for x in title_classes:
-    if len(x.match_result) != 0:
-        print(
-            f"Title: {x.title}, File: {x.match_result[1]}, Score: {x.match_result[4][1]}, Engine: {x.match_result[7]}, Limit: {x.match_result[6]}, Search: {x.match_result[5]}"
-        )
-
 
 # Footer Comment
 # History of Contributions:
