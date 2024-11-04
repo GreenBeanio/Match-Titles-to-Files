@@ -564,10 +564,8 @@ for stage in range(0, 6):
         file_classes, title_classes = createClasses(file_titles, search_df)
     # If not create the files from the previous iterations
     else:  # NOT SURE WHAT TO CHANGE YET (MIGHT NOT EVEN HAVE TO ACTUALLY...)
-        # Creating the desired data frames
-        search_df, file_titles = createDesiredDataframes(o_input_df, o_file_df)
-        # Create the classes to store the data
-        file_classes, title_classes = createClasses(file_titles, search_df)
+        # Only need ot remake the search_df. I can use the same class series'
+        search_df = o_input_df[o_input_df["Path"].isna()]
 
     # Check if there are any more files AND titles to connect
     if len(file_classes) != 0 and len(title_classes) != 0:
@@ -580,12 +578,6 @@ for stage in range(0, 6):
         # Update the input dataframe with the title results
         title_classes = updateInputDataframe(title_classes, o_input_df)
 
-# Prints all matches
-for x in title_classes:
-    if len(x.match_result) != 0:
-        print(
-            f"Title: {x.title}, File: {x.match_result[1]}, Score: {x.match_result[4][1]}, Engine: {x.match_result[7]}, Limit: {x.match_result[6]}, Search: {x.match_result[5]}"
-        )
 input("DONE WITH NEW")
 
 # Testing
