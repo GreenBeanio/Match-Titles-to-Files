@@ -485,7 +485,7 @@ def checkMatching(
         if not found_file:
             results["no"] = results["no"] + 1
     # Return the unmatched files
-    logger.info(results)
+    logger.debug(results)
     return files
 
 
@@ -527,6 +527,12 @@ def checkAllMatching(
 # Function to create the logger
 def createLogger(logger_name: str) -> logging.Logger:
     logger = logging.getLogger(logger_name)
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     return logger
 
@@ -619,6 +625,9 @@ if user_args.score_engine == -1:
             )
             # Update the input dataframe with the title results
             title_classes = updateInputDataframe(title_classes, o_input_df)
+        # If there's no possible matches left just break
+        else:
+            break
 # If the user is using a specific engine just use that
 else:
     # Creating the desired data frames
