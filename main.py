@@ -1,5 +1,5 @@
 # Header Comment
-# Project: [Garrett's Split Tracker] [https://github.com/GreenBeanio/Match-Titles-to-Files]
+# Project: [Match Titles to Files] [https://github.com/GreenBeanio/Match-Titles-to-Files]
 # Copyright: Copyright (c) [2024]-[2024] [Match Titles to Files] Contributors
 # Version: [0.1]
 # Status: [Development]
@@ -140,7 +140,7 @@ def checkPath(test_path: pathlib.Path) -> bool:
 
 
 # Function to get the arguments
-def checkArguments() -> UserPaths:
+def checkArguments(cli_args: argparse.Namespace) -> UserPaths:
     # Get the current directory
     cwd = pathlib.Path().resolve()
     # Getting path options
@@ -194,10 +194,10 @@ def readCsv(csv_path: pathlib.Path) -> pandas.DataFrame:
         sys.exit()
 
 
-# Function to create the desired data frames
-def createDesiredDataframes(
+# Function to create the initial data frame
+def createInitialDataframes(
     input_file: pathlib.Path, file_path: pathlib.Path
-) -> Tuple[pandas.DataFrame, pandas.DataFrame, pandas.DataFrame, pandas.DataFrame]:
+) -> Tuple[pandas.DataFrame, pandas.DataFrame]:
     # Getting the input csv data in a data frame
     input_df = readCsv(input_file)
 
@@ -207,20 +207,38 @@ def createDesiredDataframes(
     # Creating an index column (for recombining at the end)
     input_df["Index"] = input_df.index
 
-    # Splitting the data frame into 2 data frames (Might need to make these as deep copies later, believe these still reference the same data)
-    search_df = input_df[input_df["Path"].isnull()]  # .copy()
-    found_df = input_df[input_df["Path"].notnull()]  # .copy()
-
     # Reading all the files in the file directory
-    file_titles = getFiles(file_path)
+    file_df = getFiles(file_path)
 
-    # Removing files that are already in the found df (they've already been found :^])
-    file_titles = file_titles.drop(
-        file_titles[file_titles["Name"].isin(list(found_df["Path"]))].index
-    )
+    # # Removing files that are already in the found df (they've already been found :^])
+    # file_df = file_df.drop(
+    #     file_df[
+    #         file_df["Name"].isin(list(input_df.loc[input_df["Path"].notna(), "Path"]))
+    #     ].index
+    # )  # TEMP: I forsee an issue if there are 2 entries with the same title... I might need to think about that
 
     # Returning the data frames
-    return (input_df, search_df, found_df, file_titles)
+    return (input_df, file_df)
+
+
+# Function to create the desired data frames
+def createDesiredDataframes(
+    input_df: pandas.DataFrame, file_df: pandas.DataFrame
+) -> Tuple[pandas.DataFrame, pandas.DataFrame]:
+
+    # Splitting the data frame into 2 data frames (Might need to make these as deep copies later, believe these still reference the same data)
+    search_df = input_df[input_df["Path"].isna()]  # .copy()
+    # found_df = input_df[input_df["Path"].notna()]  # .copy()
+
+    # Removing files that are already in the found df (they've already been found :^])
+    file_df = file_df.drop(
+        file_df[
+            file_df["Name"].isin(list(input_df.loc[input_df["Path"].notna(), "Path"]))
+        ].index
+    )  # TEMP: I forsee an issue if there are 2 entries with the same title... I might need to think about that
+
+    # Returning the data frames
+    return (search_df, file_df)
 
 
 # Function to get the file names
@@ -286,15 +304,23 @@ def findMatch(
     return new_result
 
 
-# Function to get string similarity
-def findSimilarity(
-    titles: pandas.DataFrame, search: pandas.DataFrame, token_engine: int
-) -> Tuple[pandas.Series, pandas.Series]:
+# Function to create the classes
+def createClasses(titles: pandas.DataFrame, search: pandas.DataFrame):
     # Create a series of classes to store the file results
     file_classes = createFileClasses(titles)
     # Create a series of classes to store the title results
     title_classes = createTitleClasses(search)
+    return (file_classes, title_classes)
 
+
+# Function to get string similarity
+def findSimilarity(
+    file_classes: pandas.Series,
+    title_classes: pandas.Series,
+    titles: pandas.DataFrame,
+    search_df: pandas.DataFrame,
+    token_engine: int,
+) -> None:
     # Create a list of files in lower case to compare to (I believe making it lower case will make them closer)
     file_titles = [x.lower() for x in list(titles["Title"])]
     # Create a numpy array with both
@@ -304,7 +330,6 @@ def findSimilarity(
     for index, row in search_df.iterrows():
         # Getting the fuzz results comparing the searching title to the files
         result = findMatch(row["Title"].lower(), file_titles, file_np, token_engine)
-        # result = findMatch(row["Title"], list(titles["Title"]))
 
         # Updating the results for the titles
         title_class: TitleFuzzResult = title_classes[pathHash(row["Title"])]
@@ -319,9 +344,6 @@ def findSimilarity(
         result3_class: FileFuzzResult = file_classes[pathHash(result[2][0])]
         result3_class.updateResults([row["Title"], result[2][1]])
 
-    # Return the series
-    return (file_classes, title_classes)
-
 
 # Function to create a dictionary to store file fuzz results
 def createFileClasses(df: pandas.DataFrame) -> pandas.Series:
@@ -330,7 +352,7 @@ def createFileClasses(df: pandas.DataFrame) -> pandas.Series:
         temp_list.append(
             FileFuzzResult(row["Path"], row["Name"], row["Title"], row["Type"], ind)
         )
-    # Create hash to store the titles because they can be key breaking
+    # Create hash to store the titles because they can be key breaking (I don't think they actually are, but I already implemented before I realized the true error)
     index_hash = [pathHash(x) for x in list(df["Title"])]
     temp_series = pandas.Series(data=temp_list, index=index_hash)
     return temp_series
@@ -341,7 +363,7 @@ def createTitleClasses(df: pandas.DataFrame) -> pandas.Series:
     temp_list = []
     for ind, row in df.iterrows():
         temp_list.append(TitleFuzzResult(row["Title"], ind))
-    # Create hash to store the titles because they can be key breaking
+    # Create hash to store the titles because they can be key breaking (I don't think they actually are, but I already implemented before I realized the true error)
     index_hash = [pathHash(x) for x in list(df["Title"])]
     temp_series = pandas.Series(data=temp_list, index=index_hash)
     return temp_series
@@ -431,6 +453,25 @@ def checkMatching(
     return files
 
 
+# Function to update the input dataframe with the title information
+def updateInputDataframe(
+    title_classes: pandas.Series, input_df: pandas.DataFrame
+) -> pandas.Series:
+    found_list = []
+    print(len(title_classes))
+    # Go through all of the titles
+    for title in title_classes:
+        # If the title has a match
+        if len(title.match_result) != 0:
+            # Update the input data frame
+            input_df.loc[title.ind, "Path"] = title.match_result[1]
+            # Drop the title
+            found_list.append(pathHash(title.title))
+    # Drop the titles when we're not iterating through the list (could be problematic)
+    title_classes = title_classes.drop(found_list)
+    return title_classes
+
+
 # Function to check all 3 levels of matching
 def checkAllMatching(
     files: pandas.Series, titles: pandas.Series, score_criteria: int, token_engine: int
@@ -441,69 +482,131 @@ def checkAllMatching(
     return files
 
 
+# Function to create the logger
+def createLogger(logger_name: str) -> logging.Logger:
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.INFO)
+    return logger
+
+
+# Function to set up CLI arguments
+def createCliArgs() -> UserPaths:
+    # Creating the cli arguments
+    parser = argparse.ArgumentParser(
+        prog="Match Titles to Files",
+        description="Attempts to match titles to files.",
+        epilog="Garrett Johnson (GreenBeanio) - https://github.com/greenbeanio",
+    )
+    parser.add_argument(
+        "-i",
+        "--csv_path",
+        help="Path to the csv file. Default: ./titles.csv",
+        type=pathlib.Path,
+    )
+    parser.add_argument(
+        "-f",
+        "--files_path",
+        help="Path to the directory with the files to attempt to match the titles to. Default: ./files",
+        type=pathlib.Path,
+    )
+    parser.add_argument(
+        "-o",
+        "--output_path",
+        help="Path to where you want to new (or overwritten) csv to go. Default: ./matched.csv",
+        type=pathlib.Path,
+    )
+    parser.add_argument(
+        "-s",
+        "--score_limit",
+        help="What the score must be for a title and file to match. Default: 0. Must be 0 to 100",
+        type=int,
+        choices=range(0, 101),
+        metavar="0-100",
+        default=90,  # No reason for this specific limit, just a starting point
+    )
+    parser.add_argument(
+        "-e",
+        "--score_engine",
+        help="What score engine to use. Default: 0. Must be 0 to 5.\n0: Ratio\n1: Partial Ratio\n2: Token Sort Ratio\n3: Partial Token Sort Ratio\n4: Token Set Ratio\n5: Partial Token Set Ratio",
+        type=int,
+        choices=range(0, 6),
+        metavar="0-5",
+        default=0,
+    )
+    # Getting cli arguments
+    cli_args = parser.parse_args()
+    # Checking the arguments
+    user_args = checkArguments(cli_args)
+    return user_args
+
+
+# Creating the global variables (so I don't have to pass them into every function)
 # Creating a logger
-logger = logging.getLogger("Title Matcher")
-logger.setLevel(logging.INFO)
+logger = createLogger("Title Matcher")
+# Get the command line (user) arguments
+user_args = createCliArgs()
 
-# Creating the cli arguments
-parser = argparse.ArgumentParser(
-    prog="Match Titles to Files",
-    description="Attempts to match titles to files.",
-    epilog="Garrett Johnson (GreenBeanio) - https://github.com/greenbeanio",
-)
-parser.add_argument(
-    "-i",
-    "--csv_path",
-    help="Path to the csv file. Default: ./titles.csv",
-    type=pathlib.Path,
-)
-parser.add_argument(
-    "-f",
-    "--files_path",
-    help="Path to the directory with the files to attempt to match the titles to. Default: ./files",
-    type=pathlib.Path,
-)
-parser.add_argument(
-    "-o",
-    "--output_path",
-    help="Path to where you want to new (or overwritten) csv to go. Default: ./matched.csv",
-    type=pathlib.Path,
-)
-parser.add_argument(
-    "-s",
-    "--score_limit",
-    help="What the score must be for a title and file to match. Default: 0. Must be 0 to 100",
-    type=int,
-    choices=range(0, 101),
-    metavar="0-100",
-    default=90,  # No reason for this specific limit, just a starting point
-)
-parser.add_argument(
-    "-e",
-    "--score_engine",
-    help="What score engine to use. Default: 0. Must be 0 to 5.\n0: Ratio\n1: Partial Ratio\n2: Token Sort Ratio\n3: Partial Token Sort Ratio\n4: Token Set Ratio\n5: Partial Token Set Ratio",
-    type=int,
-    choices=range(0, 6),
-    metavar="0-5",
-    default=0,
-)
+################ NEW
 
-# Get the command line arguments
-cli_args = parser.parse_args()
-
-# Get the user arguments
-user_args = checkArguments()
-
-# Creating the desired data frames
-input_df, search_df, found_df, file_titles = createDesiredDataframes(
+# Create the initial data frame (source data frames)
+o_input_df, o_file_df = createInitialDataframes(
     user_args.input_csv, user_args.file_directory
 )
 
-# Creating series of the similarities
-file_classes, title_classes = findSimilarity(
-    file_titles, search_df, user_args.score_engine
-)
 
+# I want to loop all of this for every score engine type...
+for stage in range(0, 6):
+    # If it's the first stage create the starting variables from the original inputs
+    if stage == 0:
+        # Creating the desired data frames
+        search_df, file_titles = createDesiredDataframes(o_input_df, o_file_df)
+        # Create the classes to store the data
+        file_classes, title_classes = createClasses(file_titles, search_df)
+    # If not create the files from the previous iterations
+    else:  # NOT SURE WHAT TO CHANGE YET (MIGHT NOT EVEN HAVE TO ACTUALLY...)
+        # Creating the desired data frames
+        search_df, file_titles = createDesiredDataframes(o_input_df, o_file_df)
+        # Create the classes to store the data
+        file_classes, title_classes = createClasses(file_titles, search_df)
+
+    # Check if there are any more files AND titles to connect
+    if len(file_classes) != 0 and len(title_classes) != 0:
+        # Creating series of the similarities  (I could just get the file titles from the title_classes...)
+        findSimilarity(file_classes, title_classes, file_titles, search_df, stage)
+        # Check if the file and titles match (returns remaining files)
+        file_classes = checkAllMatching(
+            file_classes, title_classes, user_args.score_limit, stage
+        )
+        # Update the input dataframe with the title results
+        title_classes = updateInputDataframe(title_classes, o_input_df)
+
+# Prints all matches
+for x in title_classes:
+    if len(x.match_result) != 0:
+        print(
+            f"Title: {x.title}, File: {x.match_result[1]}, Score: {x.match_result[4][1]}, Engine: {x.match_result[7]}, Limit: {x.match_result[6]}, Search: {x.match_result[5]}"
+        )
+input("DONE WITH NEW")
+
+# Testing
+print("FOR THE LOVE OF GOD I'M ON FIRE")
+print(len(file_classes))
+print(len(title_classes))
+print(title_classes[1])
+print(o_input_df.iloc[36])
+
+############### OLD
+
+# Creating the desired data frames
+search_df, file_titles = createDesiredDataframes(o_input_df, o_file_df)
+
+# Create the classes to store the data
+file_classes, title_classes = createClasses(file_titles, search_df)
+
+# Creating series of the similarities
+findSimilarity(
+    file_classes, title_classes, file_titles, search_df, user_args.score_engine
+)
 
 # Check if the file and titles match (returns remaining files)
 file_classes = checkAllMatching(
