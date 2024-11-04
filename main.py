@@ -120,7 +120,7 @@ class TitleFuzzResult:
         self.third_result = result3
 
     # Function to assign the match value
-    def updateMatch(self, result: List[Union[str, int]]) -> None:
+    def updateMatch(self, result: List) -> None:
         self.match_result = result
 
     # Function to check if there is already a match
@@ -194,6 +194,18 @@ def readCsv(csv_path: pathlib.Path) -> pandas.DataFrame:
         sys.exit()
 
 
+# Function to write the csv (from pandas)
+def writeCsv(out_path: pathlib, output_df: pandas.DataFrame) -> None:
+    # Try to write the csv file
+    try:
+        output_df.drop("Index", axis=1).to_csv(out_path, index=False)
+        # output_df.loc[:, output_df.columns != "Index"].to_csv(out_path, index=False)
+        logger.info(f'Wrote the file at "{out_path}"')
+    except:
+        logger.error(f'The file at "{out_path}" couldn\'t be written')
+        sys.exit()
+
+
 # Function to create the initial data frame
 def createInitialDataframes(
     input_file: pathlib.Path, file_path: pathlib.Path
@@ -206,6 +218,11 @@ def createInitialDataframes(
 
     # Creating an index column (for recombining at the end)
     input_df["Index"] = input_df.index
+
+    # Creating empty columns for storing the path information
+    input_df["Score"] = pandas.NA
+    input_df["Engine"] = pandas.NA
+    input_df["Iteration"] = pandas.NA
 
     # Reading all the files in the file directory
     file_df = getFiles(file_path)
@@ -230,12 +247,18 @@ def createDesiredDataframes(
     search_df = input_df[input_df["Path"].isna()]  # .copy()
     # found_df = input_df[input_df["Path"].notna()]  # .copy()
 
-    # Removing files that are already in the found df (they've already been found :^])
+    # Removing files that are already in the found df (they've already been found :^]) [could also just add inplace=true to the drop and not return it, but oh well]
     file_df = file_df.drop(
         file_df[
             file_df["Name"].isin(list(input_df.loc[input_df["Path"].notna(), "Path"]))
         ].index
     )  # TEMP: I forsee an issue if there are 2 entries with the same title... I might need to think about that
+    # file_df.drop(
+    #     file_df[
+    #         file_df["Name"].isin(list(input_df.loc[input_df["Path"].notna(), "Path"]))
+    #     ].index,
+    #     inplace=True,
+    # )
 
     # Returning the data frames
     return (search_df, file_df)
@@ -443,14 +466,16 @@ def checkMatching(
                     # Add match information to to the title
                     titles[pathHash(x_result[0])].updateMatch(
                         [
-                            value.path,
-                            value.name,
-                            value.title,
-                            value.ftype,
-                            getCheckValue(titles[pathHash(x_result[0])], search),
-                            search,
-                            score_criteria,
-                            token_engine,
+                            value.path,  # Full path
+                            value.name,  # Name and file type
+                            value.title,  # Just the name
+                            value.ftype,  # File or directory
+                            getCheckValue(titles[pathHash(x_result[0])], search)[
+                                1
+                            ],  # Score
+                            search,  # 0, 1, 2 Iteration (what choice was it)
+                            score_criteria,  # Minimum score
+                            token_engine,  # What engine is being used
                         ]
                     )
                     # Could also probably save the entire class object of the file into the title, but I don't want to do that
@@ -460,7 +485,7 @@ def checkMatching(
         if not found_file:
             results["no"] = results["no"] + 1
     # Return the unmatched files
-    print(results)
+    logger.info(results)
     return files
 
 
@@ -469,14 +494,17 @@ def updateInputDataframe(
     title_classes: pandas.Series, input_df: pandas.DataFrame
 ) -> pandas.Series:
     found_list = []
-    print(len(title_classes))
     # Go through all of the titles
     for title in title_classes:
         # If the title has a match
         if len(title.match_result) != 0:
             # Update the input data frame
             input_df.loc[title.ind, "Path"] = title.match_result[1]
-            # Drop the title
+            # Add extra information to the df
+            input_df.loc[title.ind, "Score"] = title.match_result[4]
+            input_df.loc[title.ind, "Engine"] = title.match_result[5]
+            input_df.loc[title.ind, "Iteration"] = title.match_result[7]
+            # Add the file name to the drop list
             found_list.append(pathHash(title.title))
     # Drop the titles when we're not iterating through the list (could be problematic)
     title_classes = title_classes.drop(found_list)
@@ -487,9 +515,12 @@ def updateInputDataframe(
 def checkAllMatching(
     files: pandas.Series, titles: pandas.Series, score_criteria: int, token_engine: int
 ) -> pandas.Series:
-    files = checkMatching(files, titles, 0, score_criteria, token_engine)
-    files = checkMatching(files, titles, 1, score_criteria, token_engine)
-    files = checkMatching(files, titles, 2, score_criteria, token_engine)
+    if len(files) != 0:
+        files = checkMatching(files, titles, 0, score_criteria, token_engine)
+    if len(files) != 0:
+        files = checkMatching(files, titles, 1, score_criteria, token_engine)
+    if len(files) != 0:
+        files = checkMatching(files, titles, 2, score_criteria, token_engine)
     return files
 
 
@@ -538,11 +569,11 @@ def createCliArgs() -> UserPaths:
     parser.add_argument(
         "-e",
         "--score_engine",
-        help="What score engine to use. Default: 0. Must be 0 to 5.\n0: Ratio\n1: Partial Ratio\n2: Token Sort Ratio\n3: Partial Token Sort Ratio\n4: Token Set Ratio\n5: Partial Token Set Ratio",
+        help="What score engine to use. Default: -1. Must be -1 to 5.\n-1: Iterate through all engines\n0: Ratio\n1: Partial Ratio\n2: Token Sort Ratio\n3: Partial Token Sort Ratio\n4: Token Set Ratio\n5: Partial Token Set Ratio",
         type=int,
-        choices=range(0, 6),
-        metavar="0-5",
-        default=0,
+        choices=range(-1, 6),
+        metavar="-1-5",
+        default=-1,
     )
     # Getting cli arguments
     cli_args = parser.parse_args()
@@ -557,48 +588,56 @@ logger = createLogger("Title Matcher")
 # Get the command line (user) arguments
 user_args = createCliArgs()
 
-################ NEW
-
 # Create the initial data frame (source data frames)
 o_input_df, o_file_df = createInitialDataframes(
     user_args.input_csv, user_args.file_directory
 )
 
+# If the user isn't using a specific engine iterate through all of them
+if user_args.score_engine == -1:
+    # I want to loop all of this for every score engine type...
+    for stage in range(0, 6):
+        # If it's the first stage create the starting variables from the original inputs
+        if stage == 0:
+            # Creating the desired data frames
+            search_df, file_titles = createDesiredDataframes(o_input_df, o_file_df)
+            # Create the classes to store the data
+            file_classes, title_classes = createClasses(file_titles, search_df)
+        # If not create the files from the previous iterations
+        else:
+            # Only need ot remake the search_df. I can use the same class series'
+            search_df = o_input_df[o_input_df["Path"].isna()]
 
-# I want to loop all of this for every score engine type...
-for stage in range(0, 6):
-    # If it's the first stage create the starting variables from the original inputs
-    if stage == 0:
-        # Creating the desired data frames
-        search_df, file_titles = createDesiredDataframes(o_input_df, o_file_df)
-        # Create the classes to store the data
-        file_classes, title_classes = createClasses(file_titles, search_df)
-    # If not create the files from the previous iterations
-    else:  # NOT SURE WHAT TO CHANGE YET (MIGHT NOT EVEN HAVE TO ACTUALLY...)
-        # Only need ot remake the search_df. I can use the same class series'
-        search_df = o_input_df[o_input_df["Path"].isna()]
+        # Check if there are any more files AND titles to connect
+        if len(file_classes) != 0 and len(title_classes) != 0:
+            # Creating series of the similarities  (I could just get the file titles from the title_classes...)
+            findSimilarity(file_classes, title_classes, search_df, stage)
 
+            # Check if the file and titles match (returns remaining files)
+            file_classes = checkAllMatching(
+                file_classes, title_classes, user_args.score_limit, stage
+            )
+            # Update the input dataframe with the title results
+            title_classes = updateInputDataframe(title_classes, o_input_df)
+# If the user is using a specific engine just use that
+else:
+    # Creating the desired data frames
+    search_df, file_titles = createDesiredDataframes(o_input_df, o_file_df)
+    # Create the classes to store the data
+    file_classes, title_classes = createClasses(file_titles, search_df)
     # Check if there are any more files AND titles to connect
     if len(file_classes) != 0 and len(title_classes) != 0:
         # Creating series of the similarities  (I could just get the file titles from the title_classes...)
-        # findSimilarity(file_classes, title_classes, file_titles, search_df, stage)
-        findSimilarity(file_classes, title_classes, search_df, stage)
-
+        findSimilarity(file_classes, title_classes, search_df, user_args.score_engine)
         # Check if the file and titles match (returns remaining files)
         file_classes = checkAllMatching(
-            file_classes, title_classes, user_args.score_limit, stage
+            file_classes, title_classes, user_args.score_limit, user_args.score_engine
         )
         # Update the input dataframe with the title results
         title_classes = updateInputDataframe(title_classes, o_input_df)
 
-input("DONE WITH NEW")
-
-# Testing
-print("FOR THE LOVE OF GOD I'M ON FIRE")
-print(len(file_classes))
-print(len(title_classes))
-print(title_classes[1])
-print(o_input_df.iloc[36])
+# Write the results to a csv file
+writeCsv(user_args.output_csv, o_input_df)
 
 # Footer Comment
 # History of Contributions:
