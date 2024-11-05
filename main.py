@@ -85,6 +85,10 @@ class FileFuzzResult:
                     # Exit the loop
                     break  # could return too
 
+    # Function to clear the results
+    def clearResults(self) -> None:
+        self.results = []
+
 
 # Class to hold the results of title fuzz
 class TitleFuzzResult:
@@ -129,6 +133,13 @@ class TitleFuzzResult:
             return False
         else:
             return True
+
+    # Function to clear the results
+    def clearResults(self) -> None:
+        self.first_result = []
+        self.second_result = []
+        self.third_result = []
+        self.match_result = []
 
 
 # Function to check if a path exists
@@ -485,7 +496,7 @@ def checkMatching(
         if not found_file:
             results["no"] = results["no"] + 1
     # Return the unmatched files
-    logger.debug(results)
+    logger.info(f"Iteration {search}: {results}")
     return files
 
 
@@ -502,13 +513,26 @@ def updateInputDataframe(
             input_df.loc[title.ind, "Path"] = title.match_result[1]
             # Add extra information to the df
             input_df.loc[title.ind, "Score"] = title.match_result[4]
-            input_df.loc[title.ind, "Engine"] = title.match_result[5]
-            input_df.loc[title.ind, "Iteration"] = title.match_result[7]
+            input_df.loc[title.ind, "Engine"] = title.match_result[7]
+            input_df.loc[title.ind, "Iteration"] = title.match_result[5]
             # Add the file name to the drop list
             found_list.append(pathHash(title.title))
     # Drop the titles when we're not iterating through the list (could be problematic)
     title_classes = title_classes.drop(found_list)
     return title_classes
+
+
+# Function to clear the results from the classes
+def clearResults(file_classes: pandas.Series, title_classes: pandas.Series) -> None:
+    for file in file_classes:
+        file: (
+            FileFuzzResult  # Does this work to specify the variable type in a for loop?
+        )
+        file.clearResults()
+        # file.results = [] # Could also do something like this directly, but we fuck with getters and setters
+    for title in title_classes:
+        title: TitleFuzzResult
+        title.clearResults()
 
 
 # Function to check all 3 levels of matching
@@ -566,7 +590,7 @@ def createCliArgs() -> UserPaths:
     parser.add_argument(
         "-s",
         "--score_limit",
-        help="What the score must be for a title and file to match. Default: 0. Must be 0 to 100",
+        help="What the score must be for a title and file to match. Default: 90. Must be 0 to 100",
         type=int,
         choices=range(0, 101),
         metavar="0-100",
@@ -618,16 +642,18 @@ if user_args.score_engine == -1:
         if len(file_classes) != 0 and len(title_classes) != 0:
             # Creating series of the similarities  (I could just get the file titles from the title_classes...)
             findSimilarity(file_classes, title_classes, search_df, stage)
-
             # Check if the file and titles match (returns remaining files)
             file_classes = checkAllMatching(
                 file_classes, title_classes, user_args.score_limit, stage
             )
             # Update the input dataframe with the title results
             title_classes = updateInputDataframe(title_classes, o_input_df)
+            # Clear the results (if not it will cause errors if any class still references a already used, and remove, title or file)
+            clearResults(file_classes, title_classes)
         # If there's no possible matches left just break
         else:
             break
+        logger.info(f"stage {stage} completed")
 # If the user is using a specific engine just use that
 else:
     # Creating the desired data frames
@@ -644,6 +670,7 @@ else:
         )
         # Update the input dataframe with the title results
         title_classes = updateInputDataframe(title_classes, o_input_df)
+    logger.info("stage completed")
 
 # Write the results to a csv file
 writeCsv(user_args.output_csv, o_input_df)
