@@ -6,7 +6,7 @@
 # License(s): [MIT]
 # Author(s): [Garrett Johnson (GreenBeanio) - https://github.com/greenbeanio]
 # Maintainer: [Garrett Johnson (GreenBeanio) - https://github.com/greenbeanio]
-# Project Description: [This project is used to try to match titles to corresponding files. ]
+# Project Description: [This project is used to try to match titles to corresponding files.]
 # File Description: This is the main file for the project.
 
 # Imports
