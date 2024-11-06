@@ -198,8 +198,10 @@ def readCsv(csv_path: pathlib.Path) -> pandas.DataFrame:
     # Try to open the csv file
     try:
         # try to read the csv
-        df = pandas.read_csv(csv_path, header=None, usecols=[0, 1])
-        return df
+        df = pandas.read_csv(csv_path, header=None, usecols=[0, 1], index_col=None)
+        return df[
+            1:
+        ]  # Not returning the first row (couldn't get the header argument to use it)
     except:
         logger.error(f'The file at "{csv_path}" couldn\'t be read')
         sys.exit()
@@ -209,7 +211,9 @@ def readCsv(csv_path: pathlib.Path) -> pandas.DataFrame:
 def writeCsv(out_path: pathlib, output_df: pandas.DataFrame) -> None:
     # Try to write the csv file
     try:
-        output_df.drop("Index", axis=1).to_csv(out_path, index=False)
+        output_df.drop("Index", axis=1).to_csv(
+            out_path, index=False, encoding="utf-8-sig"
+        )  # might need to try utf-8-sig if this doesn't work
         # output_df.loc[:, output_df.columns != "Index"].to_csv(out_path, index=False)
         logger.info(f'Wrote the file at "{out_path}"')
     except:
@@ -416,7 +420,9 @@ def createTitleClasses(df: pandas.DataFrame) -> pandas.Series:
 
 # Function to create a hash for the path strings
 def pathHash(pre: str) -> str:
-    return hashlib.sha256(pre.encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        pre.encode("utf-8-sig")
+    ).hexdigest()  # might need to try utf-8-sig if this doesn't work
 
 
 # Function to get the title results for a certain type
